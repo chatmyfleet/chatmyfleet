@@ -12,7 +12,7 @@
 
 - Ship the open-source chat layer that lets AI builders hand day-to-day agent operation to their clients' ops teams, so the builder stops being the operational bottleneck.
 - Hit the dated public launch: tag `v0.4.0` Wed 2026-08-19, with 4 meaningful pre-launch tags (`v0.1.0` Jun 24, `v0.2.0` Jul 12, `v0.3.0` Jul 26, `v0.4.0` Aug 19) demonstrating verifiable shipping cadence.
-- Hold the **five-minute install contract** — clone + `docker compose up` on a fresh Linux box → OpenAI Assistant replying in Slack inside five minutes, first try.
+- Hold the **five-minute install contract** — clone + `docker compose up` on a fresh Linux box → a webhook-connected agent replying in Slack inside five minutes, first try.
 - Run **a real customer in production** on launch day (founder's Thai SMB client, live refund/discount approvals through HITL) with zero silently-dropped operator or agent messages across the first two weeks.
 - Prove **memory survives a connector swap** — a rule taught via natural language still applies after the underlying agent is reconfigured to a different connector.
 - Make **append-only audit provably enforced** — Postgres role permission, not application convention. Hash chain + Ed25519 signing arrive at v0.9.
@@ -38,7 +38,7 @@ The locked architecture (component design, message flow, MCP roles, auth model, 
 | HITL approval flow + state machine | **PROD** (unit + integration + E2E happy + sad) | `v0.3.0` |
 | Append-only audit log (enforced via Postgres role permission, exportable, chat-thread linkback) | **PROD** on enforcement + linkback; Ed25519 hash chain + signing at v0.9 | `v0.9.0` (signing) |
 | Seven named failure modes | **PROD** (each tested with explicit recovery path) | `v0.4.0` |
-| Slack adapter + OpenAI Assistants connector | **PROD** (Tier 1 round-trip happy + sad) | `v0.4.0` |
+| Slack adapter + generic HTTP/webhook connector | **PROD** (Tier 1 round-trip happy + sad) | `v0.4.0` |
 | Builder API (blocking + callback, idempotency keys) | **PROD** | `v0.4.0` |
 | Trust-signal artifacts (LICENSE, TRADEMARK, MAINTENANCE, CHANGELOG, SECURITY, CONTRIBUTING, AFFILIATES, Sponsors page, chatmyfleet.com landing) | **PROD** — populated at `v0.1.0` | `v0.1.0` |
 | Web UI (5 admin pages — Plugged-in Agents, Audit Log, Policies, Members & Roles, Dashboard) | **MVP** (happy path; sad paths added on adopter signal) | `v0.6.0` – `v0.8.0` |
@@ -60,6 +60,7 @@ The locked architecture (component design, message flow, MCP roles, auth model, 
 | 2026-05-28 | 0.3 | Locked architecture in new `docs/architecture.md`. Telemetry expansion: FR22 (token capture in audit rows), FR23 (5th Web UI page — Dashboard), NFR11 expanded 6 → 12 Prometheus metrics. New Epic 14 (Web UI Dashboard) inserted; previous Epic 14 (Failure Hardening + Launch Polish) renumbered to Epic 15. Spec total: 15 epics. Spike 6 retargeted to Epic 15. Tier 1 token capture absorbed into Epic 5 MT-02. | Natapone Charsombut (with Orbit Loop 1) |
 | 2026-05-28 | 0.4 | Spike review. Confirmed Spikes 1–6 all needed. Added Spike 7 (append-only audit two-role DB setup → Epic 2), Spike 8 (distroless image + cold-boot → Epic 1), Spike 9 (Redis Streams reclaim/restart-safety → Epic 3) — each de-risks a foundation epic. Spec total: 9 spikes. FR17 corrected to 14 slash commands (10 discoverable + 4 setup); `/agent edit` added to Epic 5; full command + `@mention` surface documented in `docs/architecture.md` §6.9. | Natapone Charsombut (with Orbit Loop 1) |
 | 2026-05-28 | 0.5 | Ran the 5 credential-free spikes (3, 6, 7, 8, 9) early — all PASS (results in `docs/spikes/`). **FR21 locked:** embedding default = `paraphrase-multilingual-MiniLM-L12-v2` (Apache 2.0, 384-dim) via FastEmbed/ONNX; `mpnet-base-v2` (Apache 2.0, 768-dim) swap; licenses verified clean for OSS distribution. Findings recorded: audit role enforcement (SQLSTATE 42501), Redis reclaim is at-least-once → idempotent worker side effects, idempotency claim pattern, distroless `libgomp` gotcha. Spikes 1/2/4/5 remain Pending (credential-gated). | Natapone Charsombut (with Orbit Loop 1) |
+| 2026-05-28 | 0.6 | **Spike 2 CLOSED — OpenAI dropped as a CMF agent-platform target** (no hosted, server-invocable agent: Assistants API removed 2026-08-26; Agent Builder workflow_id is ChatKit/browser-only; Agents SDK is self-hosted). **Added Spikes 10–13** validating connection to the Wave 1 affiliate platforms (n8n, Dify, Lindy, Flowise) — host-agent + callable-endpoint, the correct CMF connector model. ⚠️ **v0.4 launch-connector decision reopened** (Epic 5 = "OpenAI Assistants connector" needs retargeting — likely a generic HTTP/webhook connector with per-platform adapters). Decision pending. | Natapone Charsombut (with Orbit Loop 1) |
 
 ---
 
@@ -67,11 +68,11 @@ The locked architecture (component design, message flow, MCP roles, auth model, 
 
 ### Functional
 
-- **FR1**: A self-hoster can clone the public repo and run `docker compose up` on a fresh Linux box, and within five minutes have ChatMyFleet running with an OpenAI Assistant replying to `@agent hello` in their Slack workspace, on the first try, with no manual config diving.
+- **FR1**: A self-hoster can clone the public repo and run `docker compose up` on a fresh Linux box, and within five minutes have ChatMyFleet running with a webhook-connected agent replying to `@agent hello` in their Slack workspace, on the first try, with no manual config diving.
 - **FR2**: The gateway validates every incoming Slack webhook against Slack's signing secret and acknowledges within Slack's 3-second timeout window, enqueuing the work to Redis Streams for the worker to process asynchronously.
-- **FR3**: An operator can `@mention` an agent in Slack (e.g., `@finance-ai`), and the message is routed to the correct agent platform via the OpenAI Assistants connector, with the agent's response rendered back to the Slack thread.
+- **FR3**: An operator can `@mention` an agent in Slack (e.g., `@finance-ai`), and the message is routed to the correct agent platform via the generic HTTP/webhook connector (CMF POSTs the message to the agent's webhook; the agent replies via CMF's `POST /v1/agents/{id}/messages` or a sync response), with the agent's response rendered back to the Slack thread.
 - **FR4**: Every state transition in `conversations`, `approval_requests`, and agent interactions writes exactly one row to `audit_events`. The application database role has no `UPDATE` or `DELETE` permission on `audit_events`; enforcement is at the Postgres layer, not in application code.
-- **FR5**: When an agent reaches a tool call requiring approval (OpenAI Assistants `requires_action`), ChatMyFleet renders a Slack Block Kit message with `[Approve]` and `[Decline]` buttons; the operator's click resumes the agent's run with the decision.
+- **FR5**: When an agent reaches a sensitive action, it requests approval through ChatMyFleet's HITL primitive — the agent calls the Builder API `approval_request` endpoint (blocking or callback) per the generic webhook contract (or raises an MCP elicitation at v0.5+). ChatMyFleet renders a Slack Block Kit message with `[Approve]` and `[Decline]` buttons; the operator's click resolves the request and the agent continues with the decision.
 - **FR6**: When the on-call approver does not respond inside the configured window, ChatMyFleet escalates: 4h → reminder in Slack thread; 24h → email to backup approver per policy; 48h → expire. The 60s asyncio timeout-tick task reconciles state from Postgres each tick.
 - **FR7**: An approval click from the email fallback link verifies a signed token (HMAC + expiry), records the decision, writes the audit row, and links the audit entry back to the originating Slack thread URL.
 - **FR8**: Auto-approve threshold logic counts consecutive successful approvals per (agent, action-class) and surfaces a trust-delta proposal to the operator (e.g., "auto-approve refunds under $200" after 14/14 manual approvals).
@@ -88,7 +89,7 @@ The locked architecture (component design, message flow, MCP roles, auth model, 
 - **FR19**: The 7 named failure modes each have an explicit recovery path with a test in `tests/backend/` or `tests/manual/epic-X.md`: (1) agent platform timeout >2 min, (2) agent platform returns 500, (3) channel SDK rate-limited, (4) memory layer unreachable, (5) approval timeout 24h+, (6) webhook delivery fails, (7) state-machine inconsistency.
 - **FR20**: Trust-signal artifacts are populated and accurate at v0.1.0 (Week 4) when the repo flips public: `README.md`, `LICENSE` (Apache 2.0), `TRADEMARK.md`, `SECURITY.md`, `CONTRIBUTING.md`, `MAINTENANCE.md`, `CHANGELOG.md`, `AFFILIATES.md`. Sponsors page live. `chatmyfleet.com` minimal landing live.
 - **FR21**: The embedding model used for the memory layer is operator-swappable at install time via an `EMBEDDING_MODEL` env var. The default is **`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`** (Apache 2.0, 384-dim) run locally via FastEmbed (ONNX, no torch) — chosen at Spike 3 for smallest footprint + 100% Thai recall@10 + sub-ms retrieval, requiring no paid API key. The documented higher-recall swap is **`sentence-transformers/paraphrase-multilingual-mpnet-base-v2`** (Apache 2.0, 768-dim). The `memory_*.embedding` column is `VECTOR(384)` for the default; the dim is fixed per deploy at the install-time Alembic migration (changing models post-install is a re-embed migration). Operators may also override to a paid provider (OpenAI / Voyage / Cohere) if its output dim matches the column. The FastEmbed version is pinned for reproducible embeddings.
-- **FR22**: Every `agent.run.completed` row written to `audit_events` carries the agent platform's token usage (`prompt_tokens`, `completion_tokens`, `total_tokens`), the model name, the agent-call wall-clock duration, and the count of tool calls executed during the run — when the agent platform exposes these values. For OpenAI Assistants (v0.4 launch connector) all of these are available via the run completion event. Other connectors capture what their protocol surfaces; missing fields are stored as `null` rather than estimated.
+- **FR22**: Every `agent.run.completed` row written to `audit_events` carries the agent-call wall-clock duration and, **when the agent platform reports them**, the token usage (`prompt_tokens`, `completion_tokens`, `total_tokens`), the model name, and the tool-call count. Over the generic webhook connector these are optional fields the agent may include in its reply payload (n8n/Dify/Lindy/Flowise vary in what they expose); missing fields are stored as `null` rather than estimated. Duration is always captured by CMF.
 - **FR23**: The Web UI ships a 5th admin page — **Dashboard** — accessible to the User Admin role only. Sourced from `audit_events` + `approval_requests` aggregations (not from Prometheus — Prometheus is for the operator of the CMF deployment; the Dashboard is for the User Admin inside their tenant). Surfaces, for a configurable time range (default last 7 days; selectable 30 days / custom): (a) total inbound message count + sparkline; (b) total approval count + decision breakdown (approved / declined / expired); (c) median operator decision time; (d) per-agent activity table — message count, approval count, total tokens per run; (e) failure-mode occurrence counts with linkback to filtered Audit Log; (f) active conversation count (live gauge).
 
 ### Non Functional
@@ -188,37 +189,38 @@ Single `chatmyfleet/` repo. The `cmf/` Python package holds backend modules (`ga
 
 ## 5. Technical Spikes
 
-9 spikes total, each scoped to run as the **first micro-task (MT-01)** of the epic that depends on it. **The 5 credential-free spikes (3, 6, 7, 8, 9) were run early during Loop 1 — all PASS** (results in `docs/spikes/spike-N-*.md`, consolidated in `docs/spikes_result.md`). The 4 credential-gated spikes (1, 2, 4, 5 — need Slack/OpenAI/SMTP keys) remain deferred to Loop 4 pre-flight. Spikes 1–6 are carried from `docs/user_brief.md` §"Open doubts"; Spikes 7–9 were identified during the Loop 1 architecture review (they validate non-negotiable architectural call #3 and the foundation epics' backbone — see `docs/architecture.md` §3, §6).
+13 spike entries (Spike 2 **Closed**). Each runs as the **first micro-task (MT-01)** of the epic that depends on it. **The 5 credential-free spikes (3, 6, 7, 8, 9) ran early during Loop 1 — all PASS** (results in `docs/spikes/spike-N-*.md`, consolidated in `docs/spikes_result.md`). Spike 1 core PASS (live Slack send-back deferred). **Spike 2 (OpenAI Assistants) is CLOSED** — research during Loop 1 found OpenAI is not a viable CMF agent-platform target (it doesn't host an agent runtime a server-side gateway can invoke by id: Assistants API sunsets 2026-08-26; Agent Builder `workflow_id` is ChatKit/browser-only; the runtime must be self-hosted). **Spikes 10–13 (added 2026-05-28)** validate connection to the **Wave 1 affiliate platforms** (n8n, Dify, Lindy, Flowise), which DO host agents + expose callable endpoints — the correct CMF connector targets. ⚠️ **This reopens the v0.4 launch-connector decision** (Epic 5 was "OpenAI Assistants connector") — see the decision note after the spike list.
 
-| # | Spike | Target epic | Credentials |
-|---|---|---|---|
-| 1 | Slack 3s ack on FastAPI | Epic 4 | Slack workspace |
-| 2 | OpenAI Assistants POLL pattern | Epic 5 | OpenAI key |
-| 3 | Embedding model + pgvector HNSW + swap | Epic 7 | None (OpenAI key optional) |
-| 4 | NL rule extraction reliability | Epic 8 | OpenAI/Anthropic key |
-| 5 | Email link signing + audit linkback | Epic 10 | SMTP + Slack |
-| 6 | Builder API idempotency | Epic 15 | None |
-| 7 | Append-only audit two-role DB setup | Epic 2 | None |
-| 8 | Distroless image + cold-boot | Epic 1 | None |
-| 9 | Redis Streams reclaim / restart-safety | Epic 3 | None |
+| # | Spike | Target epic | Credentials | Status |
+|---|---|---|---|---|
+| 1 | Slack 3s ack on FastAPI | Epic 4 | Slack workspace | Done (core) |
+| 2 | ~~OpenAI Assistants POLL pattern~~ | ~~Epic 5~~ | — | **Closed** (OpenAI dropped) |
+| 3 | Embedding model + pgvector HNSW + swap | Epic 7 | None | Done |
+| 4 | NL rule extraction reliability | Epic 8 | OpenAI/Anthropic key | Pending |
+| 5 | Email link signing + audit linkback | Epic 10 | SMTP + Slack | Pending |
+| 6 | Builder API idempotency | Epic 15 | None | Done |
+| 7 | Append-only audit two-role DB setup | Epic 2 | None | Done |
+| 8 | Distroless image + cold-boot | Epic 1 | None | Done |
+| 9 | Redis Streams reclaim / restart-safety | Epic 3 | None | Done |
+| 10 | **n8n** connection + HITL callback | Epic 5 (Generic HTTP/Webhook Connector) | n8n account + workflow + webhook | Pending |
+| 11 | **Dify** connection + HITL | Epic 5 (Generic HTTP/Webhook Connector) | Dify account + app + API key | Pending |
+| 12 | **Lindy** connection + HITL callback | Epic 5 (Generic HTTP/Webhook Connector) | Lindy account + agent + webhook secret | Pending |
+| 13 | **Flowise** connection + HITL | Epic 5 (Generic HTTP/Webhook Connector) | Flowise instance + chatflow + API key | Pending |
 
 ### Spike 1
 
 **Name**: Slack signature verify + Block Kit round-trip on FastAPI inside Slack's 3-second ack window
 **Goal**: Confirm `slack-bolt` `AsyncApp` mounted via `AsyncSlackRequestHandler` on FastAPI acknowledges Slack webhooks in <500ms p95 under realistic payload sizes, while enqueuing the work to Redis Streams for the worker.
 **Target Epic**: Epic 4 — Slack Adapter + First Round-Trip (runs as first micro-task)
-**Credentials needed**: Slack workspace + bot token (maintainer-provided)
-**Status**: Pending
-**Results**: (To be filled after execution)
+**Credentials needed**: Slack workspace + bot token (maintainer-provided) — only for the live send-back; the 3s-ack core needs none
+**Status**: Done (core) — live send-back deferred
+**Results**: **SUCCESS (core)** (2026-05-28, slack-bolt 1.28.0 AsyncApp + FastAPI, in-process ASGI, locally-signed requests). Ack latency p95 **0.29ms** (~1700× under the 500ms NFR1 target). Signature verify rejects bad HMAC (401); replay protection auto-rejects >5min timestamps (401); url_verification handshake works. **Deferred (needs Slack token):** real `chat.postMessage` Block Kit send-back + Events API tunnel — but the 3s-ack architectural risk is fully resolved. Gotcha: construction needs a token or an `authorize` callable (a dummy token triggers a per-event `auth.test` network call). Full result in `docs/spikes/spike-1-slack-3s-ack.md`.
 
 ### Spike 2
 
-**Name**: OpenAI Assistants `requires_action` POLL pattern under Redis Streams workers
-**Goal**: Validate polling cadence vs latency trade-off; design straggler-run handler; confirm no double-execution under worker retry / restart. Measure cost (tokens + wall-clock) of polling at the chosen cadence.
-**Target Epic**: Epic 5 — OpenAI Assistants Connector + Conversation State Machine (runs as first micro-task)
-**Credentials needed**: OpenAI API key (maintainer-provided)
-**Status**: Pending
-**Results**: (To be filled after execution)
+**Name**: ~~OpenAI Assistants `requires_action` POLL pattern~~ — **CLOSED: OpenAI dropped as a CMF agent-platform target**
+**Status**: **Closed** (2026-05-28, user decision)
+**Why closed**: Research during Loop 1 established that OpenAI does not host an agent runtime a server-side gateway can invoke by id — which is CMF's core requirement (CMF connects to a builder's *hosted* agent). Specifically: (1) the **Assistants API** (the brief's original target) is deprecated and **removed 2026-08-26** (7 days after the planned v0.4 launch); (2) **Agent Builder** `workflow_id` is only runnable via **ChatKit** (a browser chat widget — a competing surface to Slack) — there is no headless server-side "send message → get response" API; (3) the only CMF-reachable OpenAI options require **self-hosting** the agent (export to Agents SDK code) or are raw LLM calls (Responses API + dashboard Prompts), neither of which is a "hosted agent platform" in CMF's sense. **CMF targets platforms that host the agent AND expose a callable endpoint** — see Spikes 10–13 (n8n, Dify, Lindy, Flowise). Self-hosted OpenAI Agents-SDK agents are served later via the generic webhook/MCP connector. Research trail preserved in `docs/spikes/spike-2-openai-poll.md`.
 
 ### Spike 3
 
@@ -291,6 +293,50 @@ Single `chatmyfleet/` repo. The `cmf/` Python package holds backend modules (`ga
 **Status**: Done
 **Results**: **SUCCESS** (2026-05-28, `redis:7` + redis-py 7.4.0). `XAUTOCLAIM` reclaimed all stale PEL entries after a simulated crash; zero loss, PEL fully drained. **Key finding:** reclaim is *at-least-once*, so `cmf-worker` side effects MUST be idempotent (state-machine guards + Spike 6 keys + `correlation_id` audit dedupe) — recorded as an Epic 3 design constraint. Full result in `docs/spikes/spike-9-redis-streams-reclaim.md`.
 
+### Spike 10
+
+**Name**: n8n connector — trigger a hosted workflow via Webhook, sync response, HITL callback
+**Goal**: Validate CMF can drive an agent hosted on n8n. CMF POSTs an operator message to an n8n **Webhook** trigger node; the hosted workflow/agent runs; the **Respond to Webhook** node returns the agent's reply synchronously (or an async callback for long runs). Validate the HITL round-trip: a "request approval" HTTP step in the workflow calls CMF's Builder API `approval_request` endpoint, waits for the operator's decision, then continues. Measure latency; confirm auth (Bearer/header) and conversation-state handling (CMF-managed).
+**Connection model**: HTTP `POST {n8n}/webhook/{path}` → workflow → `Respond to Webhook` (JSON); optional header/Bearer auth; async callback alternative.
+**Target Epic**: Epic 5 (Generic HTTP/Webhook Connector; affiliate marketplace node n8n = v0.7 post-launch)
+**Credentials needed**: n8n account (cloud or self-hosted) + a sample workflow with a Webhook trigger, an agent step, and a Respond to Webhook node
+**Status**: Pending
+**Results**: (To be filled after execution)
+
+### Spike 11
+
+**Name**: Dify connector — invoke a hosted app via `/v1/chat-messages`, conversation_id state, HITL
+**Goal**: Validate CMF calls Dify's `POST /v1/chat-messages` (Bearer API key) with the operator message + `conversation_id` for state, in both `blocking` and `streaming` response modes, and renders the hosted agent's reply. Validate the HITL pattern — how a Dify agent pauses for CMF approval (a Dify tool/plugin or workflow step that calls CMF's `approval_request` endpoint and waits). Measure latency + streaming behaviour.
+**Connection model**: REST `POST https://api.dify.ai/v1/chat-messages`, `Authorization: Bearer {app_api_key}`, `conversation_id` for multi-turn, `response_mode: blocking|streaming`.
+**Target Epic**: Epic 5 (Generic HTTP/Webhook Connector; affiliate marketplace node Dify = v0.8 post-launch)
+**Credentials needed**: Dify account (cloud or self-hosted) + a published Chat/Agent app + its API key
+**Status**: Pending
+**Results**: (To be filled after execution)
+
+### Spike 12
+
+**Name**: Lindy connector — trigger an agent via Webhook Trigger, two-way response, HITL callback
+**Goal**: Validate CMF triggers a Lindy agent via its **Webhook Trigger** (`Authorization: Bearer {secret}`) with the operator message, and receives the agent's reply (via Lindy's configured response data, or a callback POST back to CMF for longer runs). Validate the HITL round-trip: a "request approval" step in the Lindy agent calls CMF's `approval_request` endpoint and waits (this is the Wave 1 #3 path; brief notes a PartnerStack marketplace node). Measure latency; confirm sync-vs-callback behaviour.
+**Connection model**: HTTP `POST {lindy webhook url}`, `Authorization: Bearer {secret}`; two-way via response data or callback POST.
+**Target Epic**: Epic 5 (Generic HTTP/Webhook Connector; affiliate marketplace node Lindy = v0.9 post-launch)
+**Credentials needed**: Lindy account + a sample agent with a Webhook Trigger + the webhook secret
+**Status**: Pending
+**Results**: (To be filled after execution)
+
+### Spike 13
+
+**Name**: Flowise connector — call `/api/v1/prediction/{chatflowId}`, sessionId state, streaming, HITL
+**Goal**: Validate CMF calls Flowise `POST /api/v1/prediction/{chatflowId}` (optional `Bearer` API key) with the operator message + `sessionId` for conversation memory, in both sync and SSE-streaming modes, and renders the hosted chatflow's reply. Validate the HITL pattern (a flow step that calls CMF's `approval_request` endpoint and waits). Measure latency + streaming.
+**Connection model**: REST `POST {flowise}/api/v1/prediction/{chatflowId}`, optional `Authorization: Bearer {api_key}`, `sessionId` for memory, SSE streaming via `streaming: true`.
+**Target Epic**: Epic 5 (Generic HTTP/Webhook Connector; affiliate marketplace node Flowise = v0.10 post-launch)
+**Credentials needed**: Flowise instance (self-hosted or cloud) + a sample chatflow + (optional) API key
+**Status**: Pending
+**Results**: (To be filled after execution)
+
+### Cross-cutting note for Spikes 10–13 (the connector pattern)
+
+All four platforms share the same shape: **CMF → platform** (POST the operator message to a webhook/REST endpoint by URL/id + key) and **platform → CMF** for the reply (sync response, or async callback for long runs). The **HITL round-trip is inverse**: the builder wires a "request approval" step in their flow/agent that calls CMF's Builder API `approval_request` endpoint and blocks until the operator decides. This is the same `INSERT … ON CONFLICT` idempotency + long-poll mechanism validated in Spike 6. The four spikes therefore validate a **single generic HTTP/webhook connector with per-platform adapters** (auth header, sync-vs-callback, conversation-state param), not four bespoke connectors — which is the likely shape of the revised v0.4 launch connector (see decision note).
+
 ---
 
 ## 6. Epic List
@@ -301,7 +347,7 @@ Single `chatmyfleet/` repo. The `cmf/` Python package holds backend modules (`ga
 - **Epic 2: Postgres Schema + Audit Append-Only Enforcement** [Status: Approved] — Alembic migrations for all 8 tables, SQLAlchemy 2.0 async models, AESGCM crypto for connector_config, and the database-role permission that proves `audit_events` is append-only.
 - **Epic 3: Redis Streams Event Bus + Worker Loop** [Status: Approved] — Wire Redis 7, design the 6-stream event bus, stand up the `cmf-worker` asyncio main loop, and prove a test event flows gateway → stream → worker → audit row.
 - **Epic 4: Slack Adapter + First @agent Round-Trip** [Status: Approved] — Mount `slack-bolt` `AsyncApp` on FastAPI via `AsyncSlackRequestHandler`, validate signature, render Block Kit, and prove `@cmf hello` echoes back inside Slack's 3-second window. **Spike 1 resolves here.**
-- **Epic 5: OpenAI Assistants Connector + Conversation State Machine** [Status: Approved] — Wire `AsyncOpenAI` with the POLL pattern, implement the 5-state conversation state machine, write audit rows on every transition, and prove `@finance-ai hello` routes to a real OpenAI Assistant and replies in Slack with a full audit trail. **Spike 2 resolves here. This is the v0.1.0 capability.**
+- **Epic 5: Generic HTTP/Webhook Connector + Conversation State Machine** [Status: Approved] — Implement the generic HTTP/webhook connector (CMF→agent POST + agent→CMF reply endpoint), the 5-state conversation state machine, audit rows on every transition, and prove `@finance-ai hello` routes to a webhook-connected agent and replies in Slack with a full audit trail. **This is the v0.4 launch connector (promoted from v0.5; OpenAI Assistants dropped — see Spike 2 Closed) and the v0.1.0 capability.** Per-platform validation (n8n, Dify, Lindy, Flowise) in Spikes 10–13.
 - **Epic 6: v0.1.0 Public Repo Trust Artifacts + Landing** [Status: Approved] — Populate `LICENSE` (Apache 2.0), `TRADEMARK.md`, `SECURITY.md`, `CONTRIBUTING.md`, `MAINTENANCE.md`, `CHANGELOG.md`, `AFFILIATES.md`, `README.md`, `.env.example`, demo GIF, Sponsors page link, and a minimal `chatmyfleet.com` landing. **Tag: v0.1.0 — repo flips public Wed Jun 24.**
 - **Epic 7: Memory Schemas + pgvector + HNSW Search** [Status: Approved] — Build memory_rules / memory_entities / memory_decisions tables, inline embedding worker in `cmf-worker`, pgvector HNSW index, and the `memory.search` + `memory.write_rule` Builder API endpoints. **Spike 3 resolves here.**
 - **Epic 8: NL Rule Extraction + /rule Command + Pre-Context Injection** [Status: Approved] — LLM-driven NL → structured policy extraction with ambiguity fallback, the `/rule add` slash command as deterministic backup, and pre-context injection for non-MCP agents. Prove an operator's "auto-approve refunds under $200" survives a simulated connector swap. **Spike 4 resolves here. Tag: v0.2.0.**
@@ -377,19 +423,19 @@ Mount `slack-bolt` `AsyncApp` on FastAPI via `AsyncSlackRequestHandler`, validat
 - MT-05: Audit rows written for inbound + outbound events with `correlation_id` linkage
 - MT-06: Write integration test against a recorded Slack signing fixture; manual SIT script in `tests/manual/epic-4.md`
 
-### Epic 5: OpenAI Assistants Connector + Conversation State Machine
+### Epic 5: Generic HTTP/Webhook Connector + Conversation State Machine
 
 **Status**: Approved
 
-Wire `openai-python` `AsyncOpenAI` with the POLL pattern for OpenAI Assistants runs, implement the 5-state conversation state machine (`idle → routing → in_run → awaiting_approval → completed`), and write audit rows on every state transition. The vertical slice is "in a real Slack workspace, `@finance-ai hello` routes to a real OpenAI Assistant, the assistant's reply renders back to Slack, and the full audit trail is queryable." **Spike 2 resolves as MT-01. This is the v0.1.0 capability.**
+Implement the generic HTTP/webhook connector — CMF POSTs the operator message to the agent's webhook URL (with the agent's API key), the agent replies via CMF's `POST /v1/agents/{id}/messages` endpoint (or a synchronous response), and risky actions are gated by the agent calling CMF's `approval_request` endpoint. Implement the 5-state conversation state machine (`idle → routing → in_run → awaiting_approval → completed`) and write audit rows on every transition. The vertical slice is "in a real Slack workspace, `@finance-ai hello` routes to a webhook-connected agent, the reply renders back to Slack, and the full audit trail is queryable." **This is the v0.4 launch connector (promoted from v0.5; OpenAI Assistants dropped — Spike 2 Closed) and the v0.1.0 capability.**
 
 **Estimated Micro-Tasks**:
-- MT-01: **Spike 2** — OpenAI Assistants POLL pattern; measure polling cadence vs latency; design straggler-run handler; record results in `docs/spikes/spike-2-openai-assistants-poll.md`
-- MT-02: Implement `connectors/openai_assistants.py` (Connector Protocol implementation); capture token usage (`prompt_tokens`, `completion_tokens`, `total_tokens`), model name, duration, and `tool_call_count` on every `agent.run.completed` audit row per FR22
-- MT-03: Implement 5-state conversation state machine + Postgres persistence in `conversations` table
+- MT-01: Implement `connectors/webhook.py` (Connector Protocol): outbound POST of the operator message to the agent's webhook URL + the inbound `POST /v1/agents/{id}/messages` reply endpoint; auth (Bearer key); idempotency-safe
+- MT-02: Capture agent-call duration and (when the agent reports them) token usage / model / `tool_call_count` on every `agent.run.completed` audit row per FR22
+- MT-03: Implement 5-state conversation state machine + Postgres persistence in `conversations` table (state survives re-delivery per Spike 9)
 - MT-04: Implement basic slash commands needed for v0.1: `/help`, `/agent add`, `/agent list`, `/agent edit`, `/fleet`, `/audit` (full command + `@mention`-routing surface in `docs/architecture.md` §6.9)
-- MT-05: End-to-end test: send `@finance-ai hello` → state machine transitions → connector polls → reply renders → audit trail complete
-- MT-06: Manual SIT script in `tests/manual/epic-5.md` covering the v0.1.0 acceptance for "first round-trip"
+- MT-05: End-to-end test with a local webhook echo agent: send `@finance-ai hello` → state machine transitions → connector round-trip → reply renders → audit trail complete
+- MT-06: Manual SIT script in `tests/manual/epic-5.md` covering the v0.1.0 acceptance for "first round-trip" (local webhook agent; real Wave 1 platforms validated separately in Spikes 10–13)
 
 ### Epic 6: v0.1.0 Public Repo Trust Artifacts + Landing
 
@@ -423,7 +469,7 @@ Add the pgvector HNSW index on `memory_rules.embedding`, stand up the inline emb
 
 **Status**: Approved
 
-Build LLM-driven natural-language → structured-policy extraction with ambiguity fallback, the deterministic `/rule add` slash command, and pre-context injection for non-MCP agents. The vertical slice is "an operator says `@finance-ai auto-approve refunds under $200 for repeat customers` → ChatMyFleet stores it → a simulated connector swap to a fresh OpenAI Assistant still applies the rule via pre-context injection." **Spike 4 resolves as MT-01. Tag: v0.2.0.**
+Build LLM-driven natural-language → structured-policy extraction with ambiguity fallback, the deterministic `/rule add` slash command, and pre-context injection for non-MCP agents. The vertical slice is "an operator says `@finance-ai auto-approve refunds under $200 for repeat customers` → ChatMyFleet stores it → a simulated connector swap to a different webhook agent still applies the rule via pre-context injection." **Spike 4 resolves as MT-01. Tag: v0.2.0.**
 
 **Estimated Micro-Tasks**:
 - MT-01: **Spike 4** — NL rule extraction reliability + ambiguity fallback; record results in `docs/spikes/spike-4-nl-rule-extraction.md`
@@ -431,14 +477,14 @@ Build LLM-driven natural-language → structured-policy extraction with ambiguit
 - MT-03: Implement ambiguity-detection fallback (confidence < threshold → confirmation prompt in Slack thread)
 - MT-04: Implement `/rule add` slash command as deterministic fallback (commands/rule.py)
 - MT-05: Implement pre-context injection for non-MCP agents (top-K memory rules pushed into Assistant system context per run)
-- MT-06: Connector-swap regression test: rule taught via NL extraction survives reconfiguring agent to a fresh OpenAI Assistant
+- MT-06: Connector-swap regression test: rule taught via NL extraction survives reconfiguring the agent to a different webhook endpoint
 - MT-07: Tag `v0.2.0`; CHANGELOG entry; LinkedIn post; dev.to #1 ("Memory that survives agent swaps")
 
 ### Epic 9: HITL Approval State Machine + Block Kit Buttons
 
 **Status**: Approved
 
-Implement the `approval_requests` state machine (`pending → decided` or `pending → escalated → decided` or `pending → expired`), render Block Kit approval messages with `[Approve] [Decline]` buttons, and add the auto-approve threshold counters with trust-delta logic. The vertical slice is "an OpenAI Assistant raises `requires_action`, ChatMyFleet renders inline buttons in Slack, the operator clicks Approve, the agent resumes — all in <10s p95."
+Implement the `approval_requests` state machine (`pending → decided` or `pending → escalated → decided` or `pending → expired`), render Block Kit approval messages with `[Approve] [Decline]` buttons, and add the auto-approve threshold counters with trust-delta logic. The vertical slice is "an agent requests HITL approval (calls CMF's `approval_request`), ChatMyFleet renders inline Block Kit buttons in Slack, the operator clicks Approve, the agent resumes — all in <10s p95."
 
 **Estimated Micro-Tasks**:
 - MT-01: Implement `approvals/policy.py` — state machine + transitions + Postgres persistence
@@ -467,7 +513,7 @@ Ship all 5 Builder API endpoints (with blocking + callback variants for approval
 
 **Status**: Approved
 
-Scaffold the React 18 + Vite + Tailwind + shadcn/ui SPA bundled into `cmf/web/static/` and served by FastAPI, set up Argon2id-hashed API tokens for User Admin auth, and ship Page 1 (Plugged-in Agents). The vertical slice is "User Admin logs into the Web UI, sees the list of plugged-in agents with live status, and can add a new OpenAI Assistant via the form."
+Scaffold the React 18 + Vite + Tailwind + shadcn/ui SPA bundled into `cmf/web/static/` and served by FastAPI, set up Argon2id-hashed API tokens for User Admin auth, and ship Page 1 (Plugged-in Agents). The vertical slice is "User Admin logs into the Web UI, sees the list of plugged-in agents with live status, and can add a new agent (webhook URL + API key) via the form."
 
 **Estimated Micro-Tasks**:
 - MT-01: Scaffold Vite + React 18 + TypeScript + Tailwind + shadcn/ui in `cmf/web/static-src/`; wire build → `cmf/web/static/` bundle

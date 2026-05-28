@@ -45,7 +45,8 @@
 ┌────────────────────────────────────────────────────────────┐
 │  EXTERNAL SERVICES                                          │
 │   Agent platform     LLM provider      SMTP provider       │
-│   (OpenAI Asst.)     (embed + NL ext.) (email approvals)   │
+│   (n8n/Dify/Lindy/   (embed + NL ext.) (email approvals)   │
+│    Flowise/custom)                                         │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -79,7 +80,7 @@ Example: operator Sarah types `@finance-ai please refund Marc $450` in Slack.
 3. Gateway identifies `tenant_id`, `agent_id`, Slack `thread_id`, operator `user_id`.
 4. Gateway writes an `audit_events` row (inbound) with a fresh `correlation_id`.
 5. Gateway publishes to the `gateway.inbound` Redis Stream.
-6. Gateway returns `200 OK` to Slack — ~200–400ms total, inside the 3s budget. **It did not call OpenAI.**
+6. Gateway returns `200 OK` to Slack — ~200–400ms total, inside the 3s budget. **It did not call the agent platform.**
 
 ### Phase 2 — Worker async pickup (seconds)
 
@@ -87,22 +88,22 @@ Example: operator Sarah types `@finance-ai please refund Marc $450` in Slack.
 8. Worker loads/creates the `conversations` row.
 9. Worker runs memory search (pgvector + HNSW over `memory_rules.embedding`) for relevant rules.
 10. Worker injects top-K rules into the agent's system context (pre-context injection for non-MCP agents).
-11. Worker calls OpenAI Assistants (`AsyncOpenAI`), creating a run.
-12. Worker POLLs the run status (cadence tuned by Spike 2).
+11. Worker POSTs the operator message to the agent's webhook URL (the generic HTTP/webhook connector), with the agent's API key. The agent platform (n8n / Dify / Lindy / Flowise / custom) runs.
+12. The agent processes (3–25s). CMF awaits the reply — a sync HTTP response, or an async `POST /v1/agents/{id}/messages` back to CMF for longer runs.
 
 ### Phase 3 — HITL approval (operator-online round-trip <10s p95; NFR3)
 
-13. The agent emits `requires_action` with a `refund(amount=450)` tool call.
+13. The agent reaches a sensitive action and calls CMF's `POST /v1/agents/{id}/approval_request` (blocking) — `refund(amount=450)`.
 14. Worker writes an `approval_requests` row (`state=pending`, `timeout_at=now+4h`).
 15. Worker writes `audit_events` (approval requested).
 16. Worker renders a Slack Block Kit card with `[Approve] [Decline]` (each button's `value` carries the `approval_id`).
-17. **Paused.** The OpenAI run is suspended; no tokens burned; all state is in Postgres + Redis.
+17. **Paused.** The agent's `approval_request` call long-polls CMF; no agent compute spinning; all state is in Postgres + Redis.
 18. Sarah taps `[Approve]`. Slack POSTs an interactivity webhook → gateway verifies, acks <500ms.
 19. Worker resolves the approval: `UPDATE approval_requests SET state='decided', decision='approve' WHERE state='pending'` (atomic; double-click finds 0 rows).
 20. Worker writes `audit_events` (decided).
-21. Worker calls OpenAI `submit_tool_outputs` to resume the run.
-22. Agent runs the refund tool, emits the final reply.
-23. Worker captures the `agent.run.completed` event → writes audit row **including token usage + model + duration + tool_call_count** (FR22).
+21. The agent's blocked `approval_request` call returns the decision; the agent continues and runs the refund.
+22. Agent emits the final reply (sync response or a POST to CMF's messages endpoint).
+23. Worker captures the `agent.run.completed` event → writes audit row with duration, and token usage + model + tool_call_count **when the agent reports them** (FR22).
 24. Worker renders the reply to Slack, sets `conversations.state=completed`.
 
 ### When Sarah is offline
@@ -145,7 +146,7 @@ FastAPI app. The fast door: validate → enqueue → ack <500ms. Also serves the
 asyncio main loop. Owns the conversation state machine (`idle → routing → in_run → awaiting_approval → completed`), connector calls, memory search, the 60s timer tick, and all audit writes for worker-side transitions. No in-memory state that matters — reconciles from Postgres on restart. *Not at v0.4:* separate `cmf-scheduler` / `cmf-embeddings` containers (folded in here).
 
 ### 6.5 Connectors — `cmf/connectors/`
-How CMF talks to the agent platform. `openai_assistants.py` (POLL pattern, `requires_action` handling) at v0.4. Then `webhook.py` (v0.5), `mcp_client.py` (v0.6), `n8n.py`/`dify.py`/`lindy.py`/`flowise.py`/`langgraph.py` monthly thereafter. All implement the `Connector` Protocol (`base.py`). **The agent's reasoning happens entirely in the agent platform — CMF never decides what the agent says.** *Not at v0.4:* every connector except OpenAI Assistants.
+How CMF talks to the agent platform. **`webhook.py` (the generic HTTP/webhook connector) at v0.4** — CMF POSTs the operator message to the agent's webhook; the agent replies via CMF's `messages` endpoint (or sync) and gates via `approval_request`. Then `mcp_client.py` (v0.5); the Wave 1 affiliate marketplace nodes `n8n.py`/`dify.py`/`lindy.py`/`flowise.py` (v0.7–v0.10, riding on the webhook); `langgraph.py` (v0.10). All implement the `Connector` Protocol (`base.py`). **The agent's reasoning happens entirely in the agent platform — CMF never decides what the agent says.** *Not at v0.4:* every connector except the generic webhook. **OpenAI Assistants was dropped** (Spike 2 Closed — no server-invocable hosted agent); self-hosted OpenAI Agents-SDK agents connect via this same webhook connector.
 
 ### 6.6 Postgres — `cmf/db/`
 8 tables: `tenants`, `users`, `agents` (with AESGCM-encrypted `connector_config` JSONB), `conversations`, `approval_requests`, `audit_events` (append-only), `memory_rules`, `memory_entities`, `memory_decisions` (the three memory tables carry `embedding VECTOR(N)` + HNSW index). `crypto.py` holds AESGCM for secrets. *Not at v0.4:* hash chain on audit (v0.9), per-tenant master keys (v1.x), separate `approval_policies` table (v0.13+).
@@ -191,7 +192,7 @@ Agent names are arbitrary and operator-set (`@finance-ai`, `@sales-ai`, `@report
 
 | Command | Args | Does | Who |
 |---|---|---|---|
-| `/agent add` | `<type> <args>` | Register an agent (e.g. `/agent add openai-assistants <assistant_id> <api_key>`) | Admin |
+| `/agent add` | `<type> <args>` | Register an agent (e.g. `/agent add webhook <agent_url> <api_key>`) | Admin |
 | `/agent list` | — | List configured agents + IDs | Admin |
 | `/agent edit` | `<agent_id> <setting>` | Edit agent config (e.g. `/agent edit <id> memory pre-context`) | Admin |
 | `/rule add` | `<rule text>` | Deterministic memory-rule fallback when NL extraction confidence is low (FR10) | Admin/operator |
@@ -224,9 +225,9 @@ The application calls one function `embed(text) -> vector`; the dispatch (local 
 
 ## 8. MCP roles over time
 
-**v0.4 launch: no MCP.** Agents reach CMF via the REST Builder API (`POST /v1/agents/{id}/...`, FR13); CMF reaches OpenAI via the Assistants POLL pattern. MCP is deferred to v0.6 (~Oct 2026) because the locked connector strategy is "largest deployed agent runtime first" (OpenAI Assistants), and one flawless connector beats three half-working ones.
+**v0.4 launch: no MCP.** Agents reach CMF via the **generic HTTP/webhook connector** + the REST Builder API (`POST /v1/agents/{id}/...`, FR13): CMF POSTs to the agent's webhook, the agent replies + gates via the Builder API. MCP is deferred to **v0.5** (~Sep 2026; shifted up one after OpenAI Assistants was dropped, Spike 2 Closed) — one flawless connector at launch beats three half-working ones, and the Wave 1 platforms (n8n/Dify/Lindy/Flowise) all ride on the webhook.
 
-**v0.6+: CMF plays BOTH MCP roles simultaneously**, on different connections:
+**v0.5+: CMF plays BOTH MCP roles simultaneously**, on different connections:
 
 ```
 ROLE A — CMF as MCP SERVER (exposes tools to external agents)
@@ -254,11 +255,11 @@ The agent (MCP client) calls CMF's `approval.request` tool with `wait: blocking`
 
 Operator's button click resolves the same `approval_id` as in §4. The agent receives the decision and resumes.
 
-**Migration story:** v0.4 REST → v0.6 MCP is zero-friction for builders because both transports share the same auth subsystem (§9). The MCP server is a new file (`cmf/mcp_server.py`) that reuses `cmf/memory/search.py` and the existing approval logic — no backend rewrite.
+**Migration story:** v0.4 REST/webhook → v0.5 MCP is zero-friction for builders because both transports share the same auth subsystem (§9). The MCP server is a new file (`cmf/mcp_server.py`) that reuses `cmf/memory/search.py` and the existing approval logic — no backend rewrite.
 
 ## 9. Auth model
 
-Shared subsystem for the v0.4 REST Builder API and the v0.6 MCP server.
+Shared subsystem for the v0.4 REST Builder API / webhook connector and the v0.5 MCP server.
 
 **Identifier hierarchy:** `tenant_id` → `agent_id` → `api_key`. Every table carries `tenant_id` (single-tenant per deployment at v0.4; the column makes the v1.x+ multi-tenant migration non-breaking).
 
@@ -278,7 +279,7 @@ Shared subsystem for the v0.4 REST Builder API and the v0.6 MCP server.
 
 Two audiences, two surfaces, one data source (`audit_events` + `approval_requests`).
 
-**Tier 1 — token capture in audit rows.** Every `agent.run.completed` audit row carries `tokens.{prompt,completion,total}`, `model`, `duration_seconds`, `tool_call_count` when the agent platform exposes them; missing fields stored as `null`, never estimated (FR22). Captured per-connector starting at Epic 5 MT-02 (OpenAI Assistants).
+**Tier 1 — token capture in audit rows.** Every `agent.run.completed` audit row carries `duration_seconds`, and `tokens.{prompt,completion,total}` + `model` + `tool_call_count` when the agent platform reports them (over the generic webhook these are optional fields in the agent's reply; n8n/Dify/Lindy/Flowise vary); missing fields stored as `null`, never estimated (FR22). Captured starting at Epic 5 MT-02 (generic webhook connector).
 
 **Tier 2 — 12 Prometheus metrics** (NFR11), exposed at `cmf-gateway:8080/metrics` for the *operator of the CMF deployment* (Grafana / PromQL):
 
@@ -319,7 +320,8 @@ Each has an explicit recovery path tested at v0.4 (FR19). Hard guarantee (NFR4):
 
 Each item has a documented destination; "not now," not "never." Full table in `brief/chatmyfleet/mvp-architecture.md` "Explicit defer list."
 
-- **MCP** (server + client) → v0.6
+- **MCP** (server + client) → v0.5 (shifted up from v0.6 after OpenAI Assistants was dropped)
+- **OpenAI Assistants connector** → dropped (Spike 2 Closed; OpenAI agents self-host → webhook/MCP)
 - **Generic webhook connector** → v0.5
 - **Ed25519 audit hash chain + signing** → v0.9 (append-only via role permission is the v0.4 foundation)
 - **Second channel** → LINE v0.8, Telegram v0.10
@@ -336,7 +338,7 @@ Each item has a documented destination; "not now," not "never." Full table in `b
 - `docs/user_brief.md` — project intent, success criteria, defer list, constraints
 - `docs/research_business.md` — persona, competitor analysis, OSS funding model
 - `docs/research_technical.md` — stack picks, build-vs-buy, risk register, implementation strategy
-- `docs/spec.md` — FRs, NFRs, 9 spikes, 15 epics with micro-tasks (the implementation contract)
+- `docs/spec.md` — FRs, NFRs, 13 spike entries (Spike 2 closed; incl. Wave 1 platform spikes 10–13), 15 epics with micro-tasks (the implementation contract)
 - `brief/chatmyfleet/architecture.md` — public conceptual model + 5 design principles *(reference, do not edit)*
 - `brief/chatmyfleet/mvp-architecture.md` — v0.4 build spec, defer list, repo layout *(reference, do not edit)*
 - `brief/chatmyfleet/architecture-deep.md` — eventual-state engineering design *(reference, do not edit)*

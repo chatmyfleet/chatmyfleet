@@ -76,8 +76,8 @@ The founder, deploying ChatMyFleet for an existing AI sales agent already runnin
 
 **Why now (2026):**
 
-1. **Agent platforms have matured.** OpenAI Assistants is GA. LangGraph, Mastra, Lindy, Dify, Flowise, n8n are all production-deployed at scale. The agent-building layer is no longer the bottleneck — operating the agent is.
-2. **MCP is becoming the standard.** The Model Context Protocol gives ChatMyFleet a single zero-line integration that covers 200+ MCP servers and most of the LangGraph/Mastra/OpenAI Agents SDK ecosystem. v0.6.0 unlocks this.
+1. **Agent platforms have matured.** n8n, Dify, Lindy, Flowise, LangGraph, Mastra are all production-deployed at scale, hosting agents and exposing callable endpoints. (OpenAI's hosted-Assistants era is ending — the Assistants API sunsets 2026-08-26 — which is precisely why CMF targets platforms that host an agent *and* expose a server-callable endpoint.) The agent-building layer is no longer the bottleneck — operating the agent is.
+2. **MCP is becoming the standard.** The Model Context Protocol gives ChatMyFleet a single zero-line integration that covers 200+ MCP servers and most of the LangGraph/Mastra/OpenAI Agents SDK ecosystem. v0.5.0 unlocks this (shifted up from v0.6 after OpenAI Assistants was dropped as the launch connector).
 3. **AI consultancies are scaling into the bottleneck.** Anecdotally, the "I built one agent, now I'm permanent on-call" failure mode is widely reported in AI-builder communities. The market is currently solving it ad-hoc (custom Slack apps per client), which doesn't scale.
 4. **OSS distribution still compounds.** Apache 2.0 + Docker + GitHub remains the most efficient distribution stack a solo developer has. No sales team needed.
 
@@ -150,7 +150,7 @@ Small commissions when builders sign up for the agent platforms ChatMyFleet inte
 | Lindy | 30% of subscription | 24 months | v0.9.0 (~Jan 2027) |
 | Flowise | 20% | 12 months | v0.10.0 (~Feb 2027) |
 
-Subsequent cohorts (Wave 2: Make.com, Botpress, Relevance AI; Wave 3: Voiceflow, MindStudio, CustomGPT.ai, AgentCenter.cloud) sit as unlocked planning queues; order shifts on builder demand. Integrations that earn zero (OpenAI Assistants, MCP, generic webhook, custom Python) are equally first-class — selection is technical, not commercial.
+Subsequent cohorts (Wave 2: Make.com, Botpress, Relevance AI; Wave 3: Voiceflow, MindStudio, CustomGPT.ai, AgentCenter.cloud) sit as unlocked planning queues; order shifts on builder demand. Integrations that earn zero (the generic webhook connector, MCP, custom Python) are equally first-class — selection is technical, not commercial.
 
 ### Deferred / explicitly NOT in the revenue model at launch
 
