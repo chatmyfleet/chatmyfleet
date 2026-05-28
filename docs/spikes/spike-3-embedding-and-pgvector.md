@@ -19,6 +19,10 @@ Corpus: 200 docs (12 topics × {English rule, Thai rule} canonical + distractors
 | paraphrase-multilingual-MiniLM-L12-v2 | 384 | 0.22 GB | **0.46 ms** | 3.4 ms/doc | 92% | **100%** | 92% |
 | paraphrase-multilingual-mpnet-base-v2 | 768 | 1.0 GB | 1.88 ms | 12.2 ms/doc | **100%** | **100%** | **100%** |
 
+**Full line-by-line per-query log** (all 26 queries × both models: rank, hit@10, latency, cross-lingual rank, top retrieved doc): [`spike-3-per-query-results.txt`](spike-3-per-query-results.txt). (Stored as `.txt`, not `.log`, because the repo's `.gitignore` ignores `*.log`.) Regenerate anytime with `spikes/spike-3-embedding-and-pgvector/run_verbose.py`.
+
+The one MiniLM EN miss is the "orders shipped abroad must be reviewed before refund" query → correct rule lands at rank 13, because it collides in embedding space with "hold fraud-flagged orders for manual review" (both are "a human reviews an order"). mpnet resolves it (rank 4). Thai monolingual recall is 100% on both; cross-lingual (Thai query → English rule) reliably lands the English equivalent at rank ~2 (the Thai rule takes rank 1).
+
 ## Key findings
 
 1. **NFR2 passes by ~100×.** p95 retrieval at 200 rows is 0.46/1.88 ms vs the 50ms target. pgvector + HNSW (`ef_search=40`, defaults) is over-provisioned for MVP scale; no tuning needed.

@@ -1,0 +1,67 @@
+corpus: 200 docs (13 EN canon, 13 TH canon, 174 distractors), 26 labelled queries
+
+============================================================================================
+MiniLM-L12-v2  (384d)
+============================================================================================
+[EN] A returning customer wants a refund of less th hit @1         3.14ms  top: Auto-approve refunds under $200 for repeat
+[TH] ลูกค้าเก่าขอคืนเงินน้อยกว่า 200 ดอลลาร์ ต้องขอ hit @1         1.29ms  cross→EN @2  top: อนุมัติการคืนเงินอัตโนมัติสำหรับยอดต
+[EN] Orders shipped outside the country must be rev MISS (rank 13)  0.61ms  top: Hold orders flagged as potential fraud for
+[TH] คำสั่งซื้อที่ส่งไปต่างประเทศต้องให้คนตรวจสอบก่ hit @6         0.55ms  cross→EN @36 top: ระงับคำสั่งซื้อที่สงสัยว่าเป็นการฉ้อ
+[EN] If someone offers more than thirty percent off hit @2         0.46ms  top: ส่วนลดที่เกิน 30 เปอร์เซ็นต์ต้องส่งให้ผู้จ
+[TH] ถ้าจะให้ส่วนลดมากกว่า 30 เปอร์เซ็นต์ ต้องให้ผู hit @1         0.43ms  cross→EN @2  top: ส่วนลดที่เกิน 30 เปอร์เซ็นต์ต้องส่งใ
+[EN] Suspected fraudulent orders should wait for a  hit @1         0.55ms  top: Hold orders flagged as potential fraud for
+[TH] คำสั่งซื้อที่สงสัยว่าโกงควรรอให้คนมาตรวจสอบก่อ hit @1         0.67ms  cross→EN @2  top: ระงับคำสั่งซื้อที่สงสัยว่าเป็นการฉ้อ
+[EN] Top-tier customers always get fast shipping at hit @1         0.51ms  top: Give VIP customers free expedited shipping
+[TH] ลูกค้าระดับสูงสุดได้รับการจัดส่งแบบด่วนฟรีเสมอ hit @1         0.45ms  cross→EN @2  top: ให้ลูกค้าวีไอพีได้รับการจัดส่งแบบเร่
+[EN] Refund credit can never exceed what the custom hit @2         0.61ms  top: Never auto-approve refunds for internation
+[TH] เครดิตคืนเงินต้องไม่เกินจำนวนที่ลูกค้าจ่ายตอนแ hit @1         0.55ms  cross→EN @3  top: ห้ามออกเครดิตร้านค้าเกินมูลค่าคำสั่ง
+[EN] When a help request sits a full day with no re hit @2         0.46ms  top: Auto-reply to out-of-hours messages with t
+[TH] ถ้าคำขอความช่วยเหลือไม่มีการตอบกลับครบหนึ่งวัน hit @1         0.45ms  cross→EN @2  top: ส่งอีเมลติดตามหากตั๋วซัพพอร์ตไม่ได้ร
+[EN] Payments over a thousand dollars need sign-off hit @2         0.49ms  top: การจ่ายเงินที่เกิน 1,000 ดอลลาร์ต้องได้รับ
+[TH] การจ่ายเงินมากกว่าหนึ่งพันดอลลาร์ต้องมีคนอนุมั hit @1         0.50ms  cross→EN @2  top: การจ่ายเงินที่เกิน 1,000 ดอลลาร์ต้อง
+[EN] Stop the bot on its own after three consecutiv hit @2         0.43ms  top: หยุดเอเจนต์โดยอัตโนมัติหากเกิดข้อผิดพลาดสา
+[TH] ให้ปิดบอทเองหลังจากล้มเหลวสามครั้งติดกัน       hit @1         0.41ms  cross→EN @2  top: หยุดเอเจนต์โดยอัตโนมัติหากเกิดข้อผิด
+[EN] Once someone has bought five times, give them  hit @2         0.41ms  top: ให้ส่วนลดสมาชิก 10 เปอร์เซ็นต์หลังจากลูกค้
+[TH] เมื่อลูกค้าซื้อครบห้าครั้งแล้ว ให้ส่วนลดสิบเปอ hit @1         0.43ms  cross→EN @2  top: ให้ส่วนลดสมาชิก 10 เปอร์เซ็นต์หลังจา
+[EN] Always tell the operator first before you end  hit @3         0.45ms  top: Pause an agent automatically if it errors 
+[TH] ต้องบอกผู้ปฏิบัติงานก่อนเสมอก่อนจะยกเลิกแผนแบบ hit @1         0.40ms  cross→EN @2  top: แจ้งผู้ปฏิบัติงานก่อนยกเลิกการสมัครส
+[EN] Coupons should not work on items that are alre hit @4         0.41ms  top: ห้ามใช้โค้ดส่วนลดร่วมกับสินค้าล้างสต็อก
+[TH] คูปองไม่ควรใช้ได้กับสินค้าที่ลดล้างสต็อกอยู่แล hit @2         0.41ms  cross→EN @5  top: ห้ามออกเครดิตร้านค้าเกินมูลค่าคำสั่ง
+[EN] Messages received after hours should get an au hit @1         0.40ms  top: Auto-reply to out-of-hours messages with t
+[TH] ข้อความที่ได้รับนอกเวลาทำการควรได้รับข้อความอั hit @1         0.41ms  cross→EN @2  top: ตอบกลับข้อความนอกเวลาทำการอัตโนมัติพ
+
+  MiniLM-L12-v2:  EN recall@10 12/13 (92%)   TH recall@10 13/13 (100%)   cross-lingual 12/13 (92%)
+  retrieval latency: p50 0.46ms  p95 0.67ms  (over 26 queries, 200-doc corpus)
+
+============================================================================================
+mpnet-base-v2  (768d)
+============================================================================================
+[EN] A returning customer wants a refund of less th hit @1         2.43ms  top: Auto-approve refunds under $200 for repeat
+[TH] ลูกค้าเก่าขอคืนเงินน้อยกว่า 200 ดอลลาร์ ต้องขอ hit @1         1.62ms  cross→EN @2  top: อนุมัติการคืนเงินอัตโนมัติสำหรับยอดต
+[EN] Orders shipped outside the country must be rev hit @4         1.36ms  top: ห้ามอนุมัติการคืนเงินอัตโนมัติสำหรับที่อยู
+[TH] คำสั่งซื้อที่ส่งไปต่างประเทศต้องให้คนตรวจสอบก่ hit @2         1.20ms  cross→EN @7  top: ระงับคำสั่งซื้อที่สงสัยว่าเป็นการฉ้อ
+[EN] If someone offers more than thirty percent off hit @2         1.45ms  top: ส่วนลดที่เกิน 30 เปอร์เซ็นต์ต้องส่งให้ผู้จ
+[TH] ถ้าจะให้ส่วนลดมากกว่า 30 เปอร์เซ็นต์ ต้องให้ผู hit @1         1.38ms  cross→EN @2  top: ส่วนลดที่เกิน 30 เปอร์เซ็นต์ต้องส่งใ
+[EN] Suspected fraudulent orders should wait for a  hit @2         1.52ms  top: ระงับคำสั่งซื้อที่สงสัยว่าเป็นการฉ้อโกงไว้
+[TH] คำสั่งซื้อที่สงสัยว่าโกงควรรอให้คนมาตรวจสอบก่อ hit @1         1.26ms  cross→EN @2  top: ระงับคำสั่งซื้อที่สงสัยว่าเป็นการฉ้อ
+[EN] Top-tier customers always get fast shipping at hit @1         1.17ms  top: Give VIP customers free expedited shipping
+[TH] ลูกค้าระดับสูงสุดได้รับการจัดส่งแบบด่วนฟรีเสมอ hit @1         1.30ms  cross→EN @2  top: ให้ลูกค้าวีไอพีได้รับการจัดส่งแบบเร่
+[EN] Refund credit can never exceed what the custom hit @2         1.38ms  top: ห้ามออกเครดิตร้านค้าเกินมูลค่าคำสั่งซื้อเด
+[TH] เครดิตคืนเงินต้องไม่เกินจำนวนที่ลูกค้าจ่ายตอนแ hit @2         1.27ms  cross→EN @3  top: อนุมัติการคืนเงินอัตโนมัติสำหรับยอดต
+[EN] When a help request sits a full day with no re hit @1         1.15ms  top: Send a follow-up email if a support ticket
+[TH] ถ้าคำขอความช่วยเหลือไม่มีการตอบกลับครบหนึ่งวัน hit @2         1.19ms  cross→EN @1  top: Send a follow-up email if a support 
+[EN] Payments over a thousand dollars need sign-off hit @2         5.80ms  top: การจ่ายเงินที่เกิน 1,000 ดอลลาร์ต้องได้รับ
+[TH] การจ่ายเงินมากกว่าหนึ่งพันดอลลาร์ต้องมีคนอนุมั hit @1         1.46ms  cross→EN @2  top: การจ่ายเงินที่เกิน 1,000 ดอลลาร์ต้อง
+[EN] Stop the bot on its own after three consecutiv hit @2         1.49ms  top: หยุดเอเจนต์โดยอัตโนมัติหากเกิดข้อผิดพลาดสา
+[TH] ให้ปิดบอทเองหลังจากล้มเหลวสามครั้งติดกัน       hit @1         1.60ms  cross→EN @2  top: หยุดเอเจนต์โดยอัตโนมัติหากเกิดข้อผิด
+[EN] Once someone has bought five times, give them  hit @2         1.56ms  top: ให้ส่วนลดสมาชิก 10 เปอร์เซ็นต์หลังจากลูกค้
+[TH] เมื่อลูกค้าซื้อครบห้าครั้งแล้ว ให้ส่วนลดสิบเปอ hit @1         0.79ms  cross→EN @2  top: ให้ส่วนลดสมาชิก 10 เปอร์เซ็นต์หลังจา
+[EN] Always tell the operator first before you end  hit @1         0.77ms  top: Notify the operator before cancelling any 
+[TH] ต้องบอกผู้ปฏิบัติงานก่อนเสมอก่อนจะยกเลิกแผนแบบ hit @1         0.79ms  cross→EN @2  top: แจ้งผู้ปฏิบัติงานก่อนยกเลิกการสมัครส
+[EN] Coupons should not work on items that are alre hit @1         0.79ms  top: Block discount codes from being combined w
+[TH] คูปองไม่ควรใช้ได้กับสินค้าที่ลดล้างสต็อกอยู่แล hit @1         0.79ms  cross→EN @2  top: ห้ามใช้โค้ดส่วนลดร่วมกับสินค้าล้างสต
+[EN] Messages received after hours should get an au hit @1         0.76ms  top: Auto-reply to out-of-hours messages with t
+[TH] ข้อความที่ได้รับนอกเวลาทำการควรได้รับข้อความอั hit @1         0.80ms  cross→EN @2  top: ตอบกลับข้อความนอกเวลาทำการอัตโนมัติพ
+
+  mpnet-base-v2:  EN recall@10 13/13 (100%)   TH recall@10 13/13 (100%)   cross-lingual 13/13 (100%)
+  retrieval latency: p50 1.30ms  p95 1.62ms  (over 26 queries, 200-doc corpus)
