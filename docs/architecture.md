@@ -202,23 +202,25 @@ Agent names are arbitrary and operator-set (`@finance-ai`, `@sales-ai`, `@report
 
 ## 7. Where the embedding model sits
 
-The embedding model powers memory semantic search. It has **two possible homes**, chosen by `EMBEDDING_MODEL` env var at boot:
+The embedding model powers memory semantic search. It has **two possible homes**, chosen by `EMBEDDING_MODEL` env var at boot. **Locked by Spike 3:**
 
 ```
-🟢 LOCAL (default candidate)            🟠 REMOTE (operator override)
+🟢 LOCAL (v0.4 DEFAULT)                  🟠 REMOTE (operator override)
 embedding-worker task inside            HTTPS call from cmf-worker to
-cmf-worker, running an ONNX model       OpenAI / Voyage / Cohere
-via FastEmbed:                          via BYOK key:
-  intfloat/multilingual-e5-small          openai:text-embedding-3-small
-  (384-dim, ~470MB)                       (1536-dim)
-  OR google/embeddinggemma-300m         + 0 container weight
-  (768-dim Matryoshka, ~1.2GB)          − requires paid key
-+ zero paid keys (OSS promise)          − breaks air-gapped deploy
+cmf-worker, ONNX via FastEmbed          OpenAI / Voyage / Cohere via BYOK key
+(no torch):                               openai:text-embedding-3-small (1536-d)
+  DEFAULT: paraphrase-multilingual-       + 0 container weight
+    MiniLM-L12-v2 (Apache 2.0, 384-d,     − requires paid key
+    0.22GB) — 100% Thai recall@10         − breaks air-gapped deploy
+  SWAP: paraphrase-multilingual-
+    mpnet-base-v2 (Apache 2.0, 768-d,
+    1.0GB) — 100% EN/TH/cross recall
++ zero paid keys (OSS promise)
 + works offline / air-gapped
-− container weight delta
++ Apache 2.0 (safe to bake into image)
 ```
 
-The application calls one function `embed(text) -> vector`; the dispatch (local vs remote) is config. Embeddings are **off the critical path** — write-side is queued via `embedding.requested`; read-side is one quick call per `memory.search`. **Spike 3** (`docs/spec.md` §5) decides the v0.4 default by benchmarking both open-source candidates on Thai + English recall@10, container weight, and CPU latency, and designs the runtime model-swap mechanism + column-dim strategy. Multilingual (Thai-included) matters because user-zero is a Thai SMB and the v0.8 LINE adapter targets Asian SMBs.
+The application calls one function `embed(text) -> vector`; the dispatch (local vs remote) is config. Embeddings are **off the critical path** — write-side is queued via `embedding.requested`; read-side is one quick call per `memory.search`. **Spike 3 result (`docs/spikes/spike-3-embedding-and-pgvector.md`):** the originally-named candidates (`e5-small`, `embeddinggemma`) are not FastEmbed-supported, so the bake-off pivoted to the two FastEmbed Apache-2.0 multilingual models above. Both hit 100% Thai recall@10 and p95 retrieval ~0.5–1.9ms at 200 rows (~100× under the NFR2 50ms target). **Default locked: MiniLM-L12-v2, `VECTOR(384)`**, fixed-per-deploy (model change = re-embed migration); FastEmbed version pinned; model baked into the distroless image (Spike 8) so cold-boot needs no network. Multilingual (Thai-included) matters because user-zero is a Thai SMB and the v0.8 LINE adapter targets Asian SMBs.
 
 ## 8. MCP roles over time
 

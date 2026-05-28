@@ -220,3 +220,7 @@ __marimo__/
 brief/
 .agent/
 .claude/
+
+# Throwaway spike experiment code (durable results are committed under docs/spikes/)
+# Leading slash anchors to repo root so it does NOT match docs/spikes/
+/spikes/

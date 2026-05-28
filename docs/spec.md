@@ -59,6 +59,7 @@ The locked architecture (component design, message flow, MCP roles, auth model, 
 | 2026-05-28 | 0.2 | Python 3.11+ (dropped from 3.12+). Spike 3 expanded to embedding-model selection (`intfloat/multilingual-e5-small` vs `google/embeddinggemma-300m`) + Thai recall + runtime model-swap design. New FR21 (operator-swappable embedding model). User-approved Epic 14 oversized override (kept as one epic, not split). All 14 epics flipped Draft → Approved. | Natapone Charsombut (with Orbit Loop 1) |
 | 2026-05-28 | 0.3 | Locked architecture in new `docs/architecture.md`. Telemetry expansion: FR22 (token capture in audit rows), FR23 (5th Web UI page — Dashboard), NFR11 expanded 6 → 12 Prometheus metrics. New Epic 14 (Web UI Dashboard) inserted; previous Epic 14 (Failure Hardening + Launch Polish) renumbered to Epic 15. Spec total: 15 epics. Spike 6 retargeted to Epic 15. Tier 1 token capture absorbed into Epic 5 MT-02. | Natapone Charsombut (with Orbit Loop 1) |
 | 2026-05-28 | 0.4 | Spike review. Confirmed Spikes 1–6 all needed. Added Spike 7 (append-only audit two-role DB setup → Epic 2), Spike 8 (distroless image + cold-boot → Epic 1), Spike 9 (Redis Streams reclaim/restart-safety → Epic 3) — each de-risks a foundation epic. Spec total: 9 spikes. FR17 corrected to 14 slash commands (10 discoverable + 4 setup); `/agent edit` added to Epic 5; full command + `@mention` surface documented in `docs/architecture.md` §6.9. | Natapone Charsombut (with Orbit Loop 1) |
+| 2026-05-28 | 0.5 | Ran the 5 credential-free spikes (3, 6, 7, 8, 9) early — all PASS (results in `docs/spikes/`). **FR21 locked:** embedding default = `paraphrase-multilingual-MiniLM-L12-v2` (Apache 2.0, 384-dim) via FastEmbed/ONNX; `mpnet-base-v2` (Apache 2.0, 768-dim) swap; licenses verified clean for OSS distribution. Findings recorded: audit role enforcement (SQLSTATE 42501), Redis reclaim is at-least-once → idempotent worker side effects, idempotency claim pattern, distroless `libgomp` gotcha. Spikes 1/2/4/5 remain Pending (credential-gated). | Natapone Charsombut (with Orbit Loop 1) |
 
 ---
 
@@ -86,7 +87,7 @@ The locked architecture (component design, message flow, MCP roles, auth model, 
 - **FR18**: All BYOK secrets (OpenAI keys, connector credentials, SMTP credentials) are AESGCM-encrypted at rest in `connector_config` JSONB. API tokens for the Web UI / Builder API are hashed with Argon2id and stored only as hashes.
 - **FR19**: The 7 named failure modes each have an explicit recovery path with a test in `tests/backend/` or `tests/manual/epic-X.md`: (1) agent platform timeout >2 min, (2) agent platform returns 500, (3) channel SDK rate-limited, (4) memory layer unreachable, (5) approval timeout 24h+, (6) webhook delivery fails, (7) state-machine inconsistency.
 - **FR20**: Trust-signal artifacts are populated and accurate at v0.1.0 (Week 4) when the repo flips public: `README.md`, `LICENSE` (Apache 2.0), `TRADEMARK.md`, `SECURITY.md`, `CONTRIBUTING.md`, `MAINTENANCE.md`, `CHANGELOG.md`, `AFFILIATES.md`. Sponsors page live. `chatmyfleet.com` minimal landing live.
-- **FR21**: The embedding model used for the memory layer is operator-swappable at install time via an `EMBEDDING_MODEL` env var. The default ships as a local open-source multilingual model (chosen at Spike 3 from `intfloat/multilingual-e5-small` vs `google/embeddinggemma-300m`), requiring no paid API key for the memory features to work out of the box. Operators may override to a paid provider (OpenAI / Voyage / Cohere / etc.) if they want higher recall, subject to the constraint that the chosen model's output dim matches the `memory_*.embedding` column dim locked at the install-time Alembic migration.
+- **FR21**: The embedding model used for the memory layer is operator-swappable at install time via an `EMBEDDING_MODEL` env var. The default is **`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`** (Apache 2.0, 384-dim) run locally via FastEmbed (ONNX, no torch) — chosen at Spike 3 for smallest footprint + 100% Thai recall@10 + sub-ms retrieval, requiring no paid API key. The documented higher-recall swap is **`sentence-transformers/paraphrase-multilingual-mpnet-base-v2`** (Apache 2.0, 768-dim). The `memory_*.embedding` column is `VECTOR(384)` for the default; the dim is fixed per deploy at the install-time Alembic migration (changing models post-install is a re-embed migration). Operators may also override to a paid provider (OpenAI / Voyage / Cohere) if its output dim matches the column. The FastEmbed version is pinned for reproducible embeddings.
 - **FR22**: Every `agent.run.completed` row written to `audit_events` carries the agent platform's token usage (`prompt_tokens`, `completion_tokens`, `total_tokens`), the model name, the agent-call wall-clock duration, and the count of tool calls executed during the run — when the agent platform exposes these values. For OpenAI Assistants (v0.4 launch connector) all of these are available via the run completion event. Other connectors capture what their protocol surfaces; missing fields are stored as `null` rather than estimated.
 - **FR23**: The Web UI ships a 5th admin page — **Dashboard** — accessible to the User Admin role only. Sourced from `audit_events` + `approval_requests` aggregations (not from Prometheus — Prometheus is for the operator of the CMF deployment; the Dashboard is for the User Admin inside their tenant). Surfaces, for a configurable time range (default last 7 days; selectable 30 days / custom): (a) total inbound message count + sparkline; (b) total approval count + decision breakdown (approved / declined / expired); (c) median operator decision time; (d) per-agent activity table — message count, approval count, total tokens per run; (e) failure-mode occurrence counts with linkback to filtered Audit Log; (f) active conversation count (live gauge).
 
@@ -175,7 +176,7 @@ Single `chatmyfleet/` repo. The `cmf/` Python package holds backend modules (`ga
 - **No CI/CD environment exists yet.** GitHub Actions + `uv` is the planned pick. Epic 1 stands up CI as part of the foundation epic so subsequent epics have a green baseline.
 - **No paid external accounts pre-provisioned.** Slack workspace, OpenAI API key, SMTP provider — each gets confirmed before the relevant epic starts. Spikes that hit live services need credentials from the maintainer.
 - **BYOK across the stack.** LLM provider (OpenAI / Anthropic / Gemini), connector credentials, SMTP — all bring-your-own. ChatMyFleet pays nothing.
-- **Embedding model is operator-swappable via env var** (e.g., `EMBEDDING_MODEL=fastembed:multilingual-e5-small`). Default candidate pending Spike 3 (open-source multilingual; `intfloat/multilingual-e5-small` and `google/embeddinggemma-300m` are the candidates). The constraint is that the chosen model's output dimension must match the `memory_*.embedding` column dim locked at Epic 2's Alembic migration. Runtime swap mechanism and column-dim strategy are Spike 3 deliverables.
+- **Embedding model is operator-swappable via env var** (`EMBEDDING_MODEL`). Default locked by Spike 3: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (Apache 2.0, 384-dim) via FastEmbed (ONNX, no torch); documented swap `paraphrase-multilingual-mpnet-base-v2` (Apache 2.0, 768-dim). The chosen model's output dim must match the `memory_*.embedding` column dim, fixed per deploy at Epic 2's Alembic migration (model change = re-embed migration). FastEmbed version pinned; model baked into the distroless image (see FR21, `docs/architecture.md` §7).
 - **AESGCM with static `.env` key for BYOK secret encryption at v0.4.0.** KMS abstraction (AWS / GCP / Vault) deferred post-launch. Per-tenant master keys deferred to v1.x (Cloud multi-tenant).
 - **Append-only audit via Postgres role permission at v0.4.0.** Ed25519 hash chain + signing land at v0.9.0 when a compliance customer needs it. Append-only is the v0.1.0 foundation.
 - **Single multi-stage Dockerfile, distroless-python runtime, `linux/amd64` only at v0.4.0.** Multi-arch + Helm chart defer post-launch.
@@ -187,7 +188,7 @@ Single `chatmyfleet/` repo. The `cmf/` Python package holds backend modules (`ga
 
 ## 5. Technical Spikes
 
-All 9 spikes defer to Loop 4 pre-flight: each runs as the **first micro-task (MT-01)** of the epic that depends on it, when the required credentials become available. Results land in `docs/spikes/spike-N-*.md` and back into this section. Spikes 1–6 are carried from `docs/user_brief.md` §"Open doubts"; Spikes 7–9 were identified during the Loop 1 architecture review (they validate non-negotiable architectural call #3 and the foundation epics' backbone — see `docs/architecture.md` §3, §6).
+9 spikes total, each scoped to run as the **first micro-task (MT-01)** of the epic that depends on it. **The 5 credential-free spikes (3, 6, 7, 8, 9) were run early during Loop 1 — all PASS** (results in `docs/spikes/spike-N-*.md`, consolidated in `docs/spikes_result.md`). The 4 credential-gated spikes (1, 2, 4, 5 — need Slack/OpenAI/SMTP keys) remain deferred to Loop 4 pre-flight. Spikes 1–6 are carried from `docs/user_brief.md` §"Open doubts"; Spikes 7–9 were identified during the Loop 1 architecture review (they validate non-negotiable architectural call #3 and the foundation epics' backbone — see `docs/architecture.md` §3, §6).
 
 | # | Spike | Target epic | Credentials |
 |---|---|---|---|
@@ -233,8 +234,8 @@ All 9 spikes defer to Loop 4 pre-flight: each runs as the **first micro-task (MT
 - Per-model: native dim, container weight delta, CPU inference latency (p50/p95), Thai recall@10 and English recall@10 on the test corpus
 - **Recommended default** (one model named) for v0.4.0 with rationale
 - **Model-swap design**: env-var contract (e.g., `EMBEDDING_MODEL=fastembed:multilingual-e5-small`), column-dim strategy, and documented operator upgrade path
-**Status**: Pending
-**Results**: (To be filled after execution)
+**Status**: Done
+**Results**: **SUCCESS** (2026-05-28). FastEmbed lacks e5-small + embeddinggemma → pivoted (no-torch) to `paraphrase-multilingual-MiniLM-L12-v2` (384d, 0.22GB) vs `paraphrase-multilingual-mpnet-base-v2` (768d, 1.0GB). Both: Thai recall@10 = 100%; p95 retrieval @200 rows = 0.46ms / 1.88ms (~100× under the 50ms target). **Recommended default: MiniLM-384** (smallest, 100% Thai, honors 5-min install); mpnet-768 documented swap (100% all metrics). Column dim fixed-per-deploy. Full result + FR21/architecture lock follow-up in `docs/spikes/spike-3-embedding-and-pgvector.md`.
 
 ### Spike 4
 
@@ -260,8 +261,8 @@ All 9 spikes defer to Loop 4 pre-flight: each runs as the **first micro-task (MT
 **Goal**: Design idempotency-key scheme that handles long-poll behaviour cleanly. Test under simulated network retry storm: same key submitted N times concurrently must execute the action exactly once and return the same response to all callers.
 **Target Epic**: Epic 15 — Failure Hardening + Builder API Idempotency + Launch Polish (runs as first micro-task)
 **Credentials needed**: None (local-only test scenario)
-**Status**: Pending
-**Results**: (To be filled after execution)
+**Status**: Done
+**Results**: **SUCCESS** (2026-05-28, `postgres:16` + asyncpg, 12 concurrent connections). `INSERT … ON CONFLICT (key) DO NOTHING RETURNING` claim pattern: exactly one winner runs the side effect, losers poll the row for the cached response; new key executes again. Same Postgres-row guard doubles as the worker side-effect guard for Spike 9's at-least-once reclaim. Full result in `docs/spikes/spike-6-idempotency.md`.
 
 ### Spike 7
 
@@ -269,8 +270,8 @@ All 9 spikes defer to Loop 4 pre-flight: each runs as the **first micro-task (MT
 **Goal**: Validate non-negotiable architectural call #3 against running code. Prove a two-role setup works end-to-end: a privileged migration role runs Alembic DDL + creates the pgvector extension; a restricted app role gets `INSERT` (plus sequence `USAGE`) but **no `UPDATE`/`DELETE`** on `audit_events`. Confirm SQLAlchemy 2.0 async + asyncpg connect cleanly as the restricted role, and that the NFR5 enforcement test passes — the app role's `UPDATE` and `DELETE` on `audit_events` are rejected by Postgres, not by application code.
 **Target Epic**: Epic 2 — Postgres Schema + Audit Append-Only Enforcement (runs as first micro-task)
 **Credentials needed**: None (local Postgres via docker-compose)
-**Status**: Pending
-**Results**: (To be filled after execution)
+**Status**: Done
+**Results**: **SUCCESS** (2026-05-28, `pgvector/pgvector:pg16` + SQLAlchemy 2.0.50 async). App role INSERT/SELECT succeed; UPDATE and DELETE on `audit_events` rejected by Postgres with SQLSTATE 42501. Two-role pattern + GRANTs confirmed; key gotcha: `IDENTITY` PK needs `GRANT USAGE ON SEQUENCE` for the app role to INSERT. Full result + reusable GRANT block in `docs/spikes/spike-7-audit-role-enforcement.md`.
 
 ### Spike 8
 
@@ -278,8 +279,8 @@ All 9 spikes defer to Loop 4 pre-flight: each runs as the **first micro-task (MT
 **Goal**: De-risk the five-minute-install launch criterion. Build a multi-stage Dockerfile with a distroless runtime (no shell, no package manager) that correctly bundles native wheels (`asyncpg`, `cryptography`, `argon2-cffi`) — and, **conditional on Spike 3 picking a local embedding model**, the FastEmbed/`onnxruntime` runtime. Confirm `docker compose up` on a fresh box reaches a green `/health` with correct healthcheck ordering (postgres ready → migrate-on-boot → gateway + worker up) inside the five-minute budget.
 **Target Epic**: Epic 1 — Project Skeleton + CI Foundation (runs as first micro-task)
 **Credentials needed**: None (local-only)
-**Status**: Pending
-**Results**: (To be filled after execution)
+**Status**: Done
+**Results**: **SUCCESS** (2026-05-28, `gcr.io/distroless/python3-debian12`, arm64). Build 87s → 558MB; cold-boot to green `/health` in **7s** (≪ 5-min budget). asyncpg + AESGCM + argon2 + fastembed/onnxruntime all work in distroless. **Key gotcha:** onnxruntime needs `libgomp.so.1` (copy from builder — distroless lacks it); install-to-target-dir not venv; bake the model into the image; shell-less healthcheck via `python3`+urllib. amd64 to re-verify in Epic 1 CI. Full result + Dockerfile pattern in `docs/spikes/spike-8-distroless-cold-boot.md`.
 
 ### Spike 9
 
@@ -287,8 +288,8 @@ All 9 spikes defer to Loop 4 pre-flight: each runs as the **first micro-task (MT
 **Goal**: Validate the NFR9 restart-safety guarantee against running code. Prove the consumer-group pattern (`XREADGROUP` + `XACK` + `XAUTOCLAIM` of stale pending entries) recovers cleanly after a simulated worker crash mid-processing: the unacked event is reclaimed by another worker, processed exactly once (no loss, no double-execution), across the 6-stream event bus. Confirm the pattern composes with Postgres-as-source-of-truth so in-flight state survives a full worker restart.
 **Target Epic**: Epic 3 — Redis Streams Event Bus + Worker Loop (runs as first micro-task)
 **Credentials needed**: None (local Redis via docker-compose)
-**Status**: Pending
-**Results**: (To be filled after execution)
+**Status**: Done
+**Results**: **SUCCESS** (2026-05-28, `redis:7` + redis-py 7.4.0). `XAUTOCLAIM` reclaimed all stale PEL entries after a simulated crash; zero loss, PEL fully drained. **Key finding:** reclaim is *at-least-once*, so `cmf-worker` side effects MUST be idempotent (state-machine guards + Spike 6 keys + `correlation_id` audit dedupe) — recorded as an Epic 3 design constraint. Full result in `docs/spikes/spike-9-redis-streams-reclaim.md`.
 
 ---
 
